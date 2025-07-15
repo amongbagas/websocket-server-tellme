@@ -1,24 +1,24 @@
-import { WebSocketServer, WebSocket } from 'ws';
-import { IncomingMessage } from 'http';
-import { parse } from 'url';
-import { createServer, Server as HttpServer } from 'http'; // Import Server as HttpServer
+import { WebSocketServer, WebSocket } from "ws";
+import { IncomingMessage } from "http";
+import { parse } from "url";
+import { createServer, Server as HttpServer } from "http"; // Import Server as HttpServer
 
 // --- Interface Definitions (No changes, but included for completeness) ---
 export interface WebSocketMessage {
     type:
-        | 'join'
-        | 'leave'
-        | 'mute'
-        | 'unmute'
-        | 'offer'
-        | 'answer'
-        | 'ice-candidate'
-        | 'participant-update'
-        | 'error'
-        | 'heartbeat';
+        | "join"
+        | "leave"
+        | "mute"
+        | "unmute"
+        | "offer"
+        | "answer"
+        | "ice-candidate"
+        | "participant-update"
+        | "error"
+        | "heartbeat";
     roomId: string;
     uid: number;
-    role?: 'speaker' | 'listener';
+    role?: "speaker" | "listener";
     data?: {
         action?: string;
         participants?: Array<{ uid: number; role: string; isMuted: boolean }>;
@@ -36,7 +36,7 @@ export interface WebSocketMessage {
 
 export interface Participant {
     uid: number;
-    role: 'speaker' | 'listener';
+    role: "speaker" | "listener";
     isMuted: boolean;
     wsId: string; // A unique ID for the WebSocket connection
     lastHeartbeat: number; // Timestamp of last received heartbeat
@@ -56,25 +56,25 @@ class VoiceCallWebSocketServer {
     private lastBroadcastTime: Map<string, number> = new Map(); // Rate limiting for broadcasts
 
     constructor() {
-        const port = parseInt(process.env.WEBSOCKET_PORT || '8080');
+        const port = parseInt(process.env.WEBSOCKET_PORT || "8080");
 
         this.httpServer = createServer((req, res) => {
             // Set CORS headers
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-            res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+            res.setHeader("Access-Control-Allow-Origin", "*");
+            res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-            if (req.method === 'OPTIONS') {
+            if (req.method === "OPTIONS") {
                 res.writeHead(200);
                 res.end();
                 return;
             }
 
-            if (req.url === '/health' && req.method === 'GET') {
-                res.writeHead(200, { 'Content-Type': 'application/json' });
+            if (req.url === "/health" && req.method === "GET") {
+                res.writeHead(200, { "Content-Type": "application/json" });
                 res.end(
                     JSON.stringify({
-                        status: 'healthy',
+                        status: "healthy",
                         timestamp: new Date().toISOString(),
                         totalRooms: this.rooms.size,
                         totalParticipants: Array.from(this.rooms.values()).reduce(
@@ -89,22 +89,22 @@ class VoiceCallWebSocketServer {
                 return;
             }
 
-            res.writeHead(404, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Not found' }));
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Not found" }));
         });
 
         this.wss = new WebSocketServer({
             server: this.httpServer,
-            path: '/voice-call',
+            path: "/ws-voice-call",
         });
 
-        this.wss.on('connection', this.handleConnection.bind(this));
-        this.wss.on('error', (error: Error) => {
-            console.error('❌ WebSocket Server error:', error);
+        this.wss.on("connection", this.handleConnection.bind(this));
+        this.wss.on("error", (error: Error) => {
+            console.error("❌ WebSocket Server error:", error);
             // Consider more graceful shutdown or logging
         });
-        this.httpServer.on('error', (error: Error) => {
-            console.error('❌ HTTP Server error:', error);
+        this.httpServer.on("error", (error: Error) => {
+            console.error("❌ HTTP Server error:", error);
             // Fatal error for HTTP server, should probably exit
             process.exit(1);
         });
@@ -112,7 +112,7 @@ class VoiceCallWebSocketServer {
         this.httpServer.listen(port, () => {
             console.log(`✅ WebSocket server started on port ${port}`);
             console.log(`📋 Health check available at http://localhost:${port}/health`);
-            console.log(`🔌 WebSocket endpoint: ws://localhost:${port}/voice-call`);
+            console.log(`🔌 WebSocket endpoint: ws://localhost:${port}/ws-voice-call`);
         });
 
         // Start server-side heartbeat check
@@ -157,7 +157,7 @@ class VoiceCallWebSocketServer {
                         );
                         const ws = activeWebsockets.get(participant.wsId);
                         if (ws && ws.readyState === WebSocket.OPEN) {
-                            ws.close(1008, 'No heartbeat received');
+                            ws.close(1008, "No heartbeat received");
                         }
                         this.handleDisconnection(participant.roomId, participant.uid, participant.wsId);
                     }
@@ -167,7 +167,7 @@ class VoiceCallWebSocketServer {
     }
 
     private handleConnection(ws: WebSocket, req: IncomingMessage) {
-        console.log('\n🔌 New WebSocket connection attempt');
+        console.log("\n🔌 New WebSocket connection attempt");
 
         // Generate a unique ID for this WebSocket instance
         const wsId = `ws_${this.wsIdCounter++}`;
@@ -177,8 +177,8 @@ class VoiceCallWebSocketServer {
         // --- Initial Request Validation ---
         // Validate WebSocket state immediately
         if (ws.readyState !== WebSocket.OPEN) {
-            console.error('❌ WebSocket is not in OPEN state during connection:', ws.readyState);
-            ws.close(1002, 'WebSocket not in proper state');
+            console.error("❌ WebSocket is not in OPEN state during connection:", ws.readyState);
+            ws.close(1002, "WebSocket not in proper state");
             activeWebsockets.delete(wsId);
             return;
         }
@@ -186,29 +186,29 @@ class VoiceCallWebSocketServer {
         const url = parse(req.url!, true);
         const roomId = url.query.roomId as string;
         const uid = parseInt(url.query.uid as string);
-        const role = url.query.role as 'speaker' | 'listener';
+        const role = url.query.role as "speaker" | "listener";
 
         // Log initial connection parameters and headers for debugging
-        console.log(`🔌 [${wsId}] Request from: ${req.headers.origin || 'unknown'}`);
+        console.log(`🔌 [${wsId}] Request from: ${req.headers.origin || "unknown"}`);
         console.log(`🔌 [${wsId}] Connection params: Room ${roomId}, UID ${uid}, Role ${role}`);
 
         // --- Parameter Validation ---
-        if (!roomId || typeof roomId !== 'string' || roomId.trim() === '' || roomId === 'health-check') {
+        if (!roomId || typeof roomId !== "string" || roomId.trim() === "" || roomId === "health-check") {
             console.error(`❌ [${wsId}] Missing or invalid roomId: '${roomId}'`);
-            ws.close(1008, 'Missing or invalid roomId parameter');
+            ws.close(1008, "Missing or invalid roomId parameter");
             activeWebsockets.delete(wsId);
             return;
         }
         if (isNaN(uid) || uid <= 0) {
             // UID must be a positive integer
             console.error(`❌ [${wsId}] Missing or invalid UID: '${uid}'`);
-            ws.close(1008, 'Missing or invalid UID parameter');
+            ws.close(1008, "Missing or invalid UID parameter");
             activeWebsockets.delete(wsId);
             return;
         }
-        if (!role || (role !== 'speaker' && role !== 'listener')) {
+        if (!role || (role !== "speaker" && role !== "listener")) {
             console.error(`❌ [${wsId}] Missing or invalid role: '${role}'`);
-            ws.close(1008, 'Missing or invalid role parameter (must be speaker or listener)');
+            ws.close(1008, "Missing or invalid role parameter (must be speaker or listener)");
             activeWebsockets.delete(wsId);
             return;
         }
@@ -232,15 +232,15 @@ class VoiceCallWebSocketServer {
                 // Inform the old client it's being replaced
                 oldWs.send(
                     JSON.stringify({
-                        type: 'error',
+                        type: "error",
                         roomId: oldRoomId,
                         uid: oldParticipant.uid,
                         data: {
-                            message: 'Another connection with your UID was established. Disconnecting old session.',
+                            message: "Another connection with your UID was established. Disconnecting old session.",
                         },
                     })
                 );
-                oldWs.close(4000, 'New connection established with same UID'); // Custom close code
+                oldWs.close(4000, "New connection established with same UID"); // Custom close code
             } else if (oldWs) {
                 // If old WS is not open, just clean up its entry
                 activeWebsockets.delete(oldParticipant.wsId);
@@ -271,7 +271,7 @@ class VoiceCallWebSocketServer {
         };
         room.set(uid, participant);
         console.log(`✅ [${wsId}] Participant ${uid} (${role}) added to room ${roomId}. Room size: ${room.size}`);
-        console.log('📊 Current server stats:', this.getStats());
+        console.log("📊 Current server stats:", this.getStats());
 
         // Send current participants list to the new user joining
         this.sendParticipantsList(roomId, uid);
@@ -280,10 +280,10 @@ class VoiceCallWebSocketServer {
         this.broadcastParticipantsUpdate(roomId, uid);
 
         // --- WebSocket Event Listeners ---
-        ws.on('message', (data: Buffer) => {
+        ws.on("message", (data: Buffer) => {
             try {
                 const message: WebSocketMessage = JSON.parse(data.toString());
-                if (message.type === 'heartbeat') {
+                if (message.type === "heartbeat") {
                     // Update heartbeat timestamp for this participant
                     const currentParticipant = room.get(uid);
                     if (currentParticipant) {
@@ -301,30 +301,30 @@ class VoiceCallWebSocketServer {
                 console.error(`❌ [${wsId}] Invalid message format from ${uid} in room ${roomId}:`, error);
                 ws.send(
                     JSON.stringify({
-                        type: 'error',
+                        type: "error",
                         roomId,
                         uid,
-                        data: { message: 'Invalid JSON message format.', originalMessage: data.toString() },
+                        data: { message: "Invalid JSON message format.", originalMessage: data.toString() },
                     })
                 );
             }
         });
 
-        ws.on('close', (code: number, reason: Buffer) => {
+        ws.on("close", (code: number, reason: Buffer) => {
             console.log(
                 `🔌 [${wsId}] WebSocket closed for ${uid} in room ${roomId} - Code: ${code}, Reason: ${reason.toString()}`
             );
             this.handleDisconnection(roomId, uid, wsId);
         });
 
-        ws.on('error', (error: Error) => {
+        ws.on("error", (error: Error) => {
             console.error(`❌ [${wsId}] WebSocket error for ${uid} in room ${roomId}:`, error);
             // This error often precedes 'close', so handleDisconnection will be called.
             // Ensure no duplicate cleanup.
             this.handleDisconnection(roomId, uid, wsId); // Ensure cleanup on error
         });
 
-        ws.on('pong', () => {
+        ws.on("pong", () => {
             // Client responded to our ping, indicating connection is alive
             // We can also update lastHeartbeat here if we rely solely on ping/pong for client activity
             // For now, we rely on explicit 'heartbeat' messages for client activity.
@@ -349,27 +349,27 @@ class VoiceCallWebSocketServer {
             // Consider forceful disconnection for invalid messages from unknown WS IDs
             const ws = activeWebsockets.get(senderWsId);
             if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.close(1008, 'Invalid participant state or WS mismatch');
+                ws.close(1008, "Invalid participant state or WS mismatch");
             }
             return;
         }
 
         switch (message.type) {
-            case 'mute':
-            case 'unmute':
-                const isMuted = message.type === 'mute';
+            case "mute":
+            case "unmute":
+                const isMuted = message.type === "mute";
                 console.log(
-                    `${isMuted ? '🔇' : '🔊'} Participant ${uid} ${isMuted ? 'muted' : 'unmuted'} in room ${roomId}`
+                    `${isMuted ? "🔇" : "🔊"} Participant ${uid} ${isMuted ? "muted" : "unmuted"} in room ${roomId}`
                 );
                 senderParticipant.isMuted = isMuted;
                 this.broadcastParticipantsUpdate(roomId); // Broadcast to all in room
                 break;
 
-            case 'offer':
-            case 'answer':
-            case 'ice-candidate':
+            case "offer":
+            case "answer":
+            case "ice-candidate":
                 const targetUid = message.data?.targetUid;
-                if (!targetUid || typeof targetUid !== 'number') {
+                if (!targetUid || typeof targetUid !== "number") {
                     console.warn(`❌ No valid target UID specified for ${message.type} from ${uid}.`);
                     this.sendErrorToClient(senderWsId, roomId, uid, `No target UID specified for ${message.type}.`);
                     return;
@@ -396,7 +396,7 @@ class VoiceCallWebSocketServer {
                 } else {
                     console.warn(
                         `❌ [${senderWsId}] Target participant ${targetUid} WebSocket not open (state: ${
-                            targetWs?.readyState || 'N/A'
+                            targetWs?.readyState || "N/A"
                         }).`
                     );
                     this.sendErrorToClient(
@@ -459,7 +459,7 @@ class VoiceCallWebSocketServer {
             this.rooms.delete(roomId);
         }
 
-        console.log('📊 Server stats after disconnection:', this.getStats());
+        console.log("📊 Server stats after disconnection:", this.getStats());
     }
 
     // Sends an error message back to a specific client
@@ -474,7 +474,7 @@ class VoiceCallWebSocketServer {
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(
                 JSON.stringify({
-                    type: 'error',
+                    type: "error",
                     roomId,
                     uid,
                     data: {
@@ -527,11 +527,11 @@ class VoiceCallWebSocketServer {
         this.broadcast(
             roomId,
             {
-                type: 'participant-update',
+                type: "participant-update",
                 roomId,
                 // Server's UID is 0 or -1, or omitted as it's a server message
                 uid: 0, // Using 0 as a neutral server UID for this message type
-                data: { action: 'updated', participants: participantsList },
+                data: { action: "updated", participants: participantsList },
             },
             excludeUid ? this.rooms.get(roomId)?.get(excludeUid)?.wsId : undefined // Pass wsId to exclude
         );
@@ -551,10 +551,10 @@ class VoiceCallWebSocketServer {
             const participants = this.getParticipantsList(roomId);
             ws.send(
                 JSON.stringify({
-                    type: 'participant-update',
+                    type: "participant-update",
                     roomId,
                     uid: targetUid, // Recipient's UID
-                    data: { action: 'list', participants },
+                    data: { action: "list", participants },
                 })
             );
             console.log(`⬆️ Sent full participant list to ${targetUid} in room ${roomId}.`);
