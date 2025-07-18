@@ -1,0 +1,148 @@
+name: Build and Publish Docker Image
+
+on:
+    push:
+        branches:
+            - main
+
+jobs:
+    build_publish_image:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            deployments: write
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: Build Docker image
+              run: |
+                  docker build -t amongbagas/tellme-websocket-server:prod .
+            - name: Login to Docker Hub
+              run: |
+                  echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u amongbagas --password-stdin
+            - name: Push Image to Docker Hub
+              run: |
+                  docker push amongbagas/tellme-websocket-server:prod
+            - name: Create GitHub Deployment
+              uses: actions/github-script@v7
+              with:
+                  script: |
+                      const repo = context.repo;
+                      const sha = context.sha;
+                      const environment = 'production';
+                      const description = 'Docker Image Built and Published to Docker Hub';
+                      const runUrl = `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${context.runId}`;
+
+                      console.log(`Creating deployment for ${repo.owner}/${repo.repo} ref: ${sha} in environment: ${environment}`);
+
+                      const createDeploymentResponse = await github.rest.repos.createDeployment({
+                        owner: repo.owner,
+                        repo: repo.repo,
+                        ref: sha,
+                        task: 'deploy',
+                        auto_merge: false, 
+                        environment: environment,
+                        description: description,
+                        required_contexts: [],
+                        payload: {
+                          'workflow_run_url': runUrl
+                        },
+                        transient_environment: false,
+                        production_environment: true
+                      });
+
+                      const deploymentId = createDeploymentResponse.data.id;
+                      console.log(`Deployment created with ID: ${deploymentId}`);
+
+                      await github.rest.repos.createDeploymentStatus({
+                        owner: repo.owner,
+                        repo: repo.repo,
+                        deployment_id: deploymentId,
+                        state: 'success',
+                        log_url: runUrl,
+                        description: 'Docker image successfully built and pushed.',
+                        auto_inactive: true
+                      });
+
+                      console.log('Deployment status updated to success.');
+            - name: Mark Deployment as Failed (on error)
+              if: failure() && github.event_name == 'push'
+              uses: actions/github-script@v7
+              with:
+                  script: |
+                      const repo = context.repo;
+                      const sha = context.sha;
+                      const environment = 'production';
+                      const runUrl = `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${context.runId}`;
+
+                      let deploymentId;
+
+                      try {
+                        console.log(`Searching for existing deployment for ${repo.owner}/${repo.repo} ref: ${sha}`);
+                        const deployments = await github.rest.repos.listDeployments({
+                          owner: repo.owner,
+                          repo: repo.repo,
+                          ref: sha,
+                          environment: environment
+                        });
+                        
+                        deploymentId = deployments.data.find(d => d.environment === environment)?.id;
+                        console.log(`Found deployment ID: ${deploymentId || 'None'}`);
+                      } catch (error) {
+                        console.error('Error listing deployments:', error.message);
+                        console.log('Continuing without existing deployment...');
+                      }
+
+                      if (deploymentId) {
+                        try {
+                          await github.rest.repos.createDeploymentStatus({
+                            owner: repo.owner,
+                            repo: repo.repo,
+                            deployment_id: deploymentId,
+                            state: 'failure',
+                            log_url: runUrl,
+                            description: 'Docker image build or push failed.',
+                            auto_inactive: true
+                          });
+                          console.log(`Deployment status updated to failure for deployment ID: ${deploymentId}`);
+                        } catch (error) {
+                          console.error('Error updating deployment status:', error.message);
+                          core.setFailed(`Failed to update deployment status: ${error.message}`);
+                        }
+                      } else {
+                        try {
+                          console.log('No existing deployment found, creating a new failed deployment.');
+                          const createDeploymentResponse = await github.rest.repos.createDeployment({
+                            owner: repo.owner,
+                            repo: repo.repo,
+                            ref: sha,
+                            task: 'deploy',
+                            auto_merge: false,
+                            environment: environment,
+                            description: 'Docker Image Build & Push Failed',
+                            required_contexts: [],
+                            transient_environment: false,
+                            production_environment: true
+                          });
+                          
+                          const newDeploymentId = createDeploymentResponse.data.id;
+                          console.log(`New deployment created with ID: ${newDeploymentId}`);
+                          
+                          await github.rest.repos.createDeploymentStatus({
+                            owner: repo.owner,
+                            repo: repo.repo,
+                            deployment_id: newDeploymentId,
+                            state: 'failure',
+                            log_url: runUrl,
+                            description: 'Docker image build or push failed.',
+                            auto_inactive: true
+                          });
+                          
+                          console.log('New deployment status set to failure.');
+                        } catch (error) {
+                          console.error('Error creating new deployment or setting status:', error.message);
+                          core.setFailed(`Failed to create deployment: ${error.message}`);
+                        }
+                      }
+
+                      console.log('Deployment failure handling completed.');
