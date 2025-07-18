@@ -14,15 +14,20 @@ jobs:
         steps:
             - name: Checkout
               uses: actions/checkout@v4
-            - name: Build Docker image
-              run: |
-                  docker build -t amongbagas/tellme-websocket-server:prod .
+            - name: Set up QEMU
+              uses: docker/setup-qemu-action@v2
+              with:
+                  platforms: all
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v2
+              with:
+                  install: true
             - name: Login to Docker Hub
               run: |
                   echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u amongbagas --password-stdin
-            - name: Push Image to Docker Hub
+            - name: Build Docker image
               run: |
-                  docker push amongbagas/tellme-websocket-server:prod
+                  docker buildx build --platform linux/amd64,linux/arm64 -t amongbagas/tellme-websocket-server:prod --push .
             - name: Create GitHub Deployment
               uses: actions/github-script@v7
               with:
