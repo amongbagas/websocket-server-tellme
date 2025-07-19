@@ -1,33 +1,63 @@
-name: Build and Publish Docker Image
+name: build-and-push-image
 
 on:
     push:
         branches:
             - main
 
+env:
+    REGISTRY: ghcr.io
+    IMAGE_NAME: ${{ github.repository }}
+
 jobs:
-    build_publish_image:
+    build-and-push-image:
         runs-on: ubuntu-latest
         permissions:
             contents: read
+            packages: write
             deployments: write
+            id-token: write
         steps:
+            - name: Set up Docker
+              uses: crazy-max/ghaction-setup-docker@v3
+              with:
+                  daemon-config: |
+                      {
+                        "debug": true,
+                        "features": {
+                          "containerd-snapshotter": true
+                        }
+                      }
             - name: Checkout
               uses: actions/checkout@v4
+
+            - name: Login to GitHub Container Registry
+              uses: docker/login-action@v3
+              with:
+                  registry: ${{ env.REGISTRY }}
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Extract metadata (tags, labels) for Docker
+              id: meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
             - name: Set up QEMU
-              uses: docker/setup-qemu-action@v2
+              uses: docker/setup-qemu-action@v3
+
+            - name: Build and push Docker image
+              id: push
+              uses: docker/build-push-action@v6
               with:
-                  platforms: all
-            - name: Set up Docker Buildx
-              uses: docker/setup-buildx-action@v2
-              with:
-                  install: true
-            - name: Login to Docker Hub
-              run: |
-                  echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u amongbagas --password-stdin
-            - name: Build Docker image
-              run: |
-                  docker buildx build --platform linux/amd64,linux/arm64 -t amongbagas/tellme-websocket-server:prod --push .
+                  context: .
+                  push: true
+                  platforms: linux/amd64,linux/arm64
+                  provenance: false
+                  tags: ${{ steps.meta.outputs.tags }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+                  labels: ${{ steps.meta.outputs.labels }}
+
             - name: Create GitHub Deployment
               uses: actions/github-script@v7
               with:
@@ -35,7 +65,7 @@ jobs:
                       const repo = context.repo;
                       const sha = context.sha;
                       const environment = 'production';
-                      const description = 'Docker Image Built and Published to Docker Hub';
+                      const description = 'Docker Image Built and Published to GHCR';
                       const runUrl = `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${context.runId}`;
 
                       console.log(`Creating deployment for ${repo.owner}/${repo.repo} ref: ${sha} in environment: ${environment}`);
@@ -66,6 +96,7 @@ jobs:
                         state: 'success',
                         log_url: runUrl,
                         description: 'Docker image successfully built and pushed.',
+                        environment_url: 'https://tellme.texere.studio',
                         auto_inactive: true
                       });
 
